@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/cors"
+	"github.com/therealpaulgg/dumpme-server/router/download"
 	"github.com/therealpaulgg/dumpme-server/router/upload"
 )
 
@@ -43,6 +44,7 @@ func (info *Router) Launch() {
 
 	// Mount routers here
 	r.Mount("/upload", upload.Router())
+	r.Mount("/download", download.Router())
 
 	// TODO: Add NotFound and MethodNotAllowed and other necessary errors as custom responses
 	fmt.Printf("Listening on port %d\n", info.Port)

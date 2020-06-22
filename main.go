@@ -22,13 +22,13 @@ func main() {
 		panic(err.Error())
 	}
 	if config.StorageType == "filesystem" {
-		var saver *models.LocalStorageSaver
+		var saver *models.LocalStorageSaverAES
 		if config.StoragePath != "" {
 			_, err := os.Stat(config.StoragePath)
 			if err != nil {
 				panic(err.Error())
 			}
-			saver = &models.LocalStorageSaver{StoragePath: strings.TrimRight(strings.TrimRight(config.StoragePath, "/"), "\\")}
+			saver = &models.LocalStorageSaverAES{StoragePath: strings.TrimRight(strings.TrimRight(config.StoragePath, "/"), "\\")}
 		} else {
 			if _, err := os.Stat("dump"); os.IsNotExist(err) {
 				err = os.Mkdir("dump", 0755)
@@ -36,9 +36,9 @@ func main() {
 					panic(err.Error())
 				}
 			}
-			saver = &models.LocalStorageSaver{StoragePath: "dump"}
+			saver = &models.LocalStorageSaverAES{StoragePath: "dump"}
 		}
-		services.FileSaver = saver
+		services.EncryptedFileSaver = saver
 	}
 	var port int
 	if config.Port != 0 {
