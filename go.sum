@@ -5,6 +5,8 @@ github.com/go-chi/chi v4.1.2+incompatible h1:fGFk2Gmi/YKXk0OmGfBh0WgmN3XB8lVnEyN
 github.com/go-chi/chi v4.1.2+incompatible/go.mod h1:eB3wogJHnLi3x/kFX2A+IbTBlXxmMeXJVKy9tTv1XzQ=
 github.com/go-chi/cors v1.1.1 h1:eHuqxsIw89iXcWnWUN8R72JMibABJTN/4IOYI5WERvw=
 github.com/go-chi/cors v1.1.1/go.mod h1:K2Yje0VW/SJzxiyMYu6iPQYa7hMjQX2i/F491VChg1I=
+github.com/klauspost/compress v1.10.9 h1:pPRt1Z78crspaHISkpSSHjDlx+Tt9suHe519dsI0vF4=
+github.com/klauspost/compress v1.10.9/go.mod h1:aoV0uJVorq1K+umq18yTdKaF57EivdYsUV+/s2qKfXs=
 github.com/matoous/go-nanoid v1.4.1 h1:Yag04X+qPMDtYbyJsMDhoe8rP5kRl293b2QK8KRp2SE=
 github.com/matoous/go-nanoid v1.4.1/go.mod h1:fvGBnhcQ+zcrB3qJIG32PAN11J/y1IYkGX2/VeHzuH0=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=

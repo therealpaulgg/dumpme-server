@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi"
 	gonanoid "github.com/matoous/go-nanoid"
@@ -19,12 +21,14 @@ func Router() chi.Router {
 }
 
 func uploadFiles(w http.ResponseWriter, req *http.Request) {
-	err := req.ParseMultipartForm(10 << 20)
+	start := time.Now()
+	err := req.ParseMultipartForm(10 << 28)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		return
 	}
+	fmt.Println("Just finished parsing multipart", time.Since(start))
 	m := req.MultipartForm
 	files := m.File["files"]
 	foldername, _ := gonanoid.Nanoid(54)
@@ -50,6 +54,7 @@ func uploadFiles(w http.ResponseWriter, req *http.Request) {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
+		fmt.Println("Added & encrypted file", time.Since(start))
 	}
 	encodedKey := base64.URLEncoding.EncodeToString(key)
 	json.NewEncoder(w).Encode(map[string]interface{}{

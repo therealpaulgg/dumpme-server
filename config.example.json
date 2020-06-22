@@ -1,0 +1,6 @@
+{
+    "storageType": "filesystem",
+    "storagePath": "/tmp/oof",
+    "port": 8080,
+    "environment": "development"
+}

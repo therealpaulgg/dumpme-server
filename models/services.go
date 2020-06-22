@@ -1,16 +1,19 @@
 package models
 
 import (
-	"archive/zip"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/klauspost/compress/zip"
 )
 
 // FileSaver is a generic interface which saves a file to the persistent storage set up in user configuration.
@@ -131,10 +134,13 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 
 	for _, file := range files {
 		// obtain ciphertext and add the decrypted version to an archive
+		start := time.Now()
+		fmt.Println("Reading file..", time.Since(start))
 		data, err := ioutil.ReadFile(file)
 		if err != nil {
 			return nil, err
 		}
+		fmt.Println("File read", time.Since(start))
 		blockCipher, err := aes.NewCipher(key)
 		if err != nil {
 			return nil, err
@@ -146,13 +152,16 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 		// collect nonce and ciphertext separately from data
 		nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
 		// attempt decryption
+		fmt.Println("Decrypting file...", time.Since(start))
 		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 		if err != nil {
 			// decrypton failed
 			return nil, err
 		}
+		fmt.Println("decrypted", time.Since(start))
 
 		// create a file with the decrypted file inside of the ZIP file
+		fmt.Println("Adding file to zip...", time.Since(start))
 		f, err := w.Create(file)
 		if err != nil {
 			return nil, err
@@ -161,6 +170,7 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 		if err != nil {
 			return nil, err
 		}
+		fmt.Println("Added to zip", time.Since(start))
 	}
 	// close the zip writer
 	err = w.Close()
