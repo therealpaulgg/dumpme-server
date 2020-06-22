@@ -1,5 +1,0 @@
-{
-    "storageType": "filesystem",
-    "port": 8080,
-    "environment": "development"
-}
