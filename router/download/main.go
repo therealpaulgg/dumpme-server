@@ -27,6 +27,7 @@ func download(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=decrypted.zip")
 	w.Header().Set("Content-Type", "application/zip")

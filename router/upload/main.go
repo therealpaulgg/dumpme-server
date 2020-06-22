@@ -1,9 +1,9 @@
 package upload
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"math/rand"
 	"net/http"
 
 	"github.com/go-chi/chi"

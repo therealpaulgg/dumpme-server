@@ -6,8 +6,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/binary"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -57,27 +55,22 @@ type LocalStorageSaverAES struct {
 
 // SaveFile LocalStorageSaver's implmementation of SaveFile
 func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, key []byte, file multipart.File) error {
-	// ensure folder name exists
+	// Check if directory exists, create if it doesn't exist yet
 	_, err := os.Stat(saver.StoragePath + "/" + foldername)
 	if os.IsNotExist(err) {
 		os.Mkdir(saver.StoragePath+"/"+foldername, 0755)
 	} else if err != nil {
 		return err
 	}
-	// this is the outfile name
-	outFilename := filename + ".enc"
-	dest, err := os.Create(saver.StoragePath + "/" + foldername + "/" + outFilename)
+
+	// Create the location where the encrypted file will go
+	dest, err := os.Create(saver.StoragePath + "/" + foldername + "/" + filename)
 	if err != nil {
 		return err
 	}
 	defer dest.Close()
 
-	size, _ := file.Seek(0, 0)
-	origSize := uint64(size)
-	if err = binary.Write(dest, binary.LittleEndian, origSize); err != nil {
-		return err
-	}
-
+	// convert multipart file to bytes
 	buf := bytes.NewBuffer(nil)
 
 	if _, err := io.Copy(buf, file); err != nil {
@@ -88,32 +81,24 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 
 	// we now have plaintext
 
-	if len(plaintext)%aes.BlockSize != 0 {
-		bytesToPad := aes.BlockSize - (len(plaintext) % aes.BlockSize)
-		padding := make([]byte, bytesToPad)
-		if _, err := rand.Read(padding); err != nil {
-			return err
-		}
-		plaintext = append(plaintext, padding...)
-	}
-
-	iv := make([]byte, aes.BlockSize)
-	if _, err := rand.Read(iv); err != nil {
-		return err
-	}
-	if _, err = dest.Write(iv); err != nil {
-		return err
-	}
-
-	// ciphertext := make([]byte, len(plaintext))
-	block, err := aes.NewCipher(key)
+	// create cipher block
+	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
 		return err
 	}
-	mode, err := cipher.NewGCM(block)
-	nonce := make([]byte, 12)
-	ciphertext := mode.Seal(nil, nonce, plaintext, nil)
-	// mode.CryptBlocks(ciphertext, plaintext)
+	// specify block cipher type (GCM, authenticated)
+	gcm, err := cipher.NewGCM(blockCipher)
+	if err != nil {
+		return err
+	}
+	// create a random nonce
+	nonce := make([]byte, gcm.NonceSize())
+
+	if _, err = rand.Read(nonce); err != nil {
+		return err
+	}
+	// create and write ciphertext with nonce as first 12 bytes
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
 	if _, err := dest.Write(ciphertext); err != nil {
 		return err
@@ -122,12 +107,18 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 	return nil
 }
 
+// GetFiles decrypts all files in directory and zips them up
 func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*bytes.Buffer, error) {
+	directory := saver.StoragePath + "/" + foldername
+	if _, err := os.Stat(directory); err != nil {
+		return nil, err
+	}
+	// create a buffer for a zip file in memory
 	zipbuf := new(bytes.Buffer)
 	w := zip.NewWriter(zipbuf)
-	directory := saver.StoragePath + "/" + foldername
-	fmt.Println(directory)
+
 	var files []string
+	// find all files in the directory, ignoring the root
 	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
 		if path != directory {
 			files = append(files, path)
@@ -140,32 +131,28 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 
 	for _, file := range files {
 		// obtain ciphertext and add the decrypted version to an archive
-		ciphertext, err := ioutil.ReadFile(file)
+		data, err := ioutil.ReadFile(file)
 		if err != nil {
 			return nil, err
 		}
-		var origSize uint64
-		buf := bytes.NewReader(ciphertext)
-		if err = binary.Read(buf, binary.LittleEndian, &origSize); err != nil {
-			return nil, err
-		}
-		iv := make([]byte, aes.BlockSize)
-		if _, err := buf.Read(iv); err != nil {
-			return nil, err
-		}
-
-		paddedSize := len(ciphertext) - 8 - aes.BlockSize
-		if paddedSize%aes.BlockSize != 0 {
-			return nil, fmt.Errorf("want padded plaintext size to be aligned to block size")
-		}
-		plaintext := make([]byte, paddedSize)
-
-		block, err := aes.NewCipher(key)
+		blockCipher, err := aes.NewCipher(key)
 		if err != nil {
 			return nil, err
 		}
-		mode := cipher.NewCBCDecrypter(block, iv)
-		mode.CryptBlocks(plaintext, ciphertext[8+aes.BlockSize:])
+		gcm, err := cipher.NewGCM(blockCipher)
+		if err != nil {
+			return nil, err
+		}
+		// collect nonce and ciphertext separately from data
+		nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
+		// attempt decryption
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			// decrypton failed
+			return nil, err
+		}
+
+		// create a file with the decrypted file inside of the ZIP file
 		f, err := w.Create(file)
 		if err != nil {
 			return nil, err
@@ -175,9 +162,11 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 			return nil, err
 		}
 	}
+	// close the zip writer
 	err = w.Close()
 	if err != nil {
 		return nil, err
 	}
+	// send zip file buffer
 	return zipbuf, nil
 }
