@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -54,6 +56,7 @@ func (saver *LocalStorageSaver) SaveFile(filename string, foldername string, fil
 // LocalStorageSaverAES implements FileSaver, uses local system storage. Makes use of AES.
 type LocalStorageSaverAES struct {
 	StoragePath string
+	SecretKey   string
 }
 
 // SaveFile LocalStorageSaver's implmementation of SaveFile
@@ -73,40 +76,46 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 	}
 	defer dest.Close()
 
-	// convert multipart file to bytes
-	buf := bytes.NewBuffer(nil)
-
-	if _, err := io.Copy(buf, file); err != nil {
-		return err
-	}
-
-	plaintext := buf.Bytes()
+	const IVSize = 16
+	const bufferSize = 4096
 
 	// we now have plaintext
+
+	// create random initialization vector
+	iv := make([]byte, IVSize)
+	_, err = rand.Read(iv)
+	if err != nil {
+		return err
+	}
 
 	// create cipher block
 	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
 		return err
 	}
-	// specify block cipher type (GCM, authenticated)
-	gcm, err := cipher.NewGCM(blockCipher)
-	if err != nil {
-		return err
-	}
-	// create a random nonce
-	nonce := make([]byte, gcm.NonceSize())
+	// specify block cipher type (CTR for stream)
+	ctr := cipher.NewCTR(blockCipher, iv)
+	// create HMAC
+	hmac := hmac.New(sha512.New, []byte(saver.SecretKey))
 
-	if _, err = rand.Read(nonce); err != nil {
-		return err
+	buf := make([]byte, bufferSize)
+	for {
+		n, err := file.Read(buf)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		outBuf := make([]byte, n)
+		ctr.XORKeyStream(outBuf, buf[:n])
+		hmac.Write(outBuf)
+		dest.Write(outBuf)
+		if err == io.EOF {
+			break
+		}
 	}
-	// create and write ciphertext with nonce as first 12 bytes
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
-	if _, err := dest.Write(ciphertext); err != nil {
-		return err
-	}
-
+	dest.Write(iv)
+	hmac.Write(iv)
+	dest.Write(hmac.Sum(nil))
 	return nil
 }
 
@@ -132,45 +141,93 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 		return nil, err
 	}
 
+	const IVSize = 16
+	const bufferSize = 4096
+
 	for _, file := range files {
 		// obtain ciphertext and add the decrypted version to an archive
 		start := time.Now()
 		fmt.Println("Reading file..", time.Since(start))
-		data, err := ioutil.ReadFile(file)
+		dataStream, err := os.Open(file)
+
+		// seek the last 16 + 64 bytes (IV length & hmac length) which contain the IV as well as HMAC
+		offsetOfMetadata, err := dataStream.Seek(-1*(16+64), 2)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println("File read", time.Since(start))
+
+		ivAndHMAC := make([]byte, 16+64)
+		_, err = dataStream.ReadAt(ivAndHMAC, offsetOfMetadata)
+
+		if err != nil {
+			return nil, err
+		}
+		// fmt.Println(ivAndHMAC)
+		iv := ivAndHMAC[:IVSize]
+		hmacFromFile := ivAndHMAC[IVSize:]
+		fmt.Println(hex.EncodeToString(iv))
+		fmt.Println(hex.EncodeToString(hmacFromFile))
+
+		// data, err := ioutil.ReadFile(file)
+		// if err != nil {
+		// 	return nil, err
+		// }
+
+		// create cipher block
 		blockCipher, err := aes.NewCipher(key)
 		if err != nil {
 			return nil, err
 		}
-		gcm, err := cipher.NewGCM(blockCipher)
-		if err != nil {
-			return nil, err
-		}
-		// collect nonce and ciphertext separately from data
-		nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
-		// attempt decryption
-		fmt.Println("Decrypting file...", time.Since(start))
-		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-		if err != nil {
-			// decrypton failed
-			return nil, err
-		}
-		fmt.Println("decrypted", time.Since(start))
-
-		// create a file with the decrypted file inside of the ZIP file
+		// specify block cipher type (CTR for stream)
+		ctr := cipher.NewCTR(blockCipher, iv)
+		// create HMAC
+		hmac := hmac.New(sha512.New, []byte(saver.SecretKey))
 		fmt.Println("Adding file to zip...", time.Since(start))
 		f, err := w.Create(file)
 		if err != nil {
 			return nil, err
 		}
-		_, err = f.Write(plaintext)
-		if err != nil {
-			return nil, err
+
+		buf := make([]byte, bufferSize)
+		currentOffset := int64(0)
+		dataStream.Seek(currentOffset, 0)
+
+		for {
+			// if we are at byte 4096 (goes to 8192) and bad byte occurs at 4112...so 4096 % 4112 != 4096
+			// include bytes 4112 - 4096
+			// on next iteration, we just wont include anything, easy, because math
+			n, err := dataStream.ReadAt(buf, currentOffset)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			outBuf := make([]byte, n)
+			ctr.XORKeyStream(outBuf, buf[:n])
+			hmac.Write(outBuf)
+			var zipError error
+			if (currentOffset+bufferSize)%offsetOfMetadata != (currentOffset + bufferSize) {
+				// only include relevant bytes
+				bytesToInclude := offsetOfMetadata - currentOffset
+				_, zipError = f.Write(outBuf[:bytesToInclude])
+			} else {
+				// normal stuff
+				_, zipError = f.Write(outBuf)
+			}
+
+			if zipError != nil {
+				return nil, err
+			}
+
+			if err == io.EOF {
+				break
+			}
+
+			if err != nil {
+				return nil, err
+			}
+			currentOffset += bufferSize
 		}
 		fmt.Println("Added to zip", time.Since(start))
+
 	}
 	// close the zip writer
 	err = w.Close()

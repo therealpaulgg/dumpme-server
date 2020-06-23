@@ -38,6 +38,7 @@ func main() {
 			}
 			saver = &models.LocalStorageSaverAES{StoragePath: "dump"}
 		}
+		saver.SecretKey = config.SecretKey
 		services.EncryptedFileSaver = saver
 	}
 	var port int
