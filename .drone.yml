@@ -1,0 +1,42 @@
+kind: pipeline
+name: dumpme-server
+type: docker
+steps:
+    -
+        commands:
+            - go build -o app
+        image: golang
+        name: build
+    -
+        name: copyfiles
+        image: appleboy/drone-scp
+        settings:
+            host:
+                from_secret: HOST
+            port: 22
+            key:
+                from_secret: SSH_KEY
+            source: dist
+            target: ~/apps/dumpme-server
+            username:
+                from_secret: USER
+            when:
+                branch:
+                - master
+    -
+        name: deploy
+        image: appleboy/drone-ssh
+        settings:
+            settings:
+            host:
+                from_secret: HOST
+            port: 22
+            key:
+                from_secret: SSH_KEY
+            username:
+                from_secret: SSH_KEY
+            script:
+                bash ~/apps/dumpme-server/deploy.sh
+            when:
+                branch:
+                - master
