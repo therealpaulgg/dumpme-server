@@ -60,5 +60,6 @@ func uploadFiles(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"folderName": foldername,
 		"key":        encodedKey,
+		"url":        "http://localhost:8080/download/" + foldername + "/" + encodedKey,
 	})
 }

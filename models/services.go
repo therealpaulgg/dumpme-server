@@ -1,14 +1,9 @@
 package models
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha512"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -78,17 +73,9 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 	}
 	defer dest.Close()
 
-	const IVSize = 16
 	const bufferSize = 4096
 
 	// we now have plaintext
-
-	// create random initialization vector
-	iv := make([]byte, IVSize)
-	_, err = rand.Read(iv)
-	if err != nil {
-		return err
-	}
 
 	// create cipher block
 	blockCipher, err := aes.NewCipher(key)
@@ -96,29 +83,37 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 		return err
 	}
 	// specify block cipher type (CTR for stream)
-	ctr := cipher.NewCTR(blockCipher, iv)
-	// create HMAC
-	hmac := hmac.New(sha512.New, []byte(saver.SecretKey))
-
-	buf := make([]byte, bufferSize)
-	for {
-		n, err := file.Read(buf)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		outBuf := make([]byte, n)
-		ctr.XORKeyStream(outBuf, buf[:n])
-		hmac.Write(outBuf)
-		dest.Write(outBuf)
-		if err == io.EOF {
-			break
-		}
+	gcm, err := cipher.NewGCM(blockCipher)
+	if err != nil {
+		return err
 	}
 
-	dest.Write(iv)
-	hmac.Write(iv)
+	buf := make([]byte, bufferSize)
 
-	dest.Write(hmac.Sum(nil))
+	for {
+		n, ioErr := file.Read(buf)
+		fmt.Println(n)
+		if ioErr != nil && ioErr != io.EOF {
+			return ioErr
+		}
+		nonce := make([]byte, gcm.NonceSize())
+
+		_, err = rand.Read(nonce)
+		if err != nil {
+			return err
+		}
+		if ioErr == io.EOF {
+			break
+		}
+
+		outBuf := gcm.Seal(nonce, nonce, buf[:n], nil)
+		fmt.Println(len(outBuf))
+
+		dest.Write(outBuf)
+
+	}
+	dest.Close()
+
 	return nil
 }
 
@@ -154,25 +149,8 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 
 	for _, file := range files {
 		// obtain ciphertext and add the decrypted version to an archive
-		// start := time.Now()
 
 		dataStream, err := os.Open(file)
-
-		// seek the last 16 + 64 bytes (IV length & hmac length) which contain the IV as well as HMAC
-		offsetOfMetadata, err := dataStream.Seek(-1*(16+64), 2)
-		if err != nil {
-			return nil, err
-		}
-
-		ivAndHMAC := make([]byte, 16+64)
-		_, err = dataStream.ReadAt(ivAndHMAC, offsetOfMetadata)
-
-		if err != nil {
-			return nil, err
-		}
-
-		iv := ivAndHMAC[:IVSize]
-		hmacFromFile := ivAndHMAC[IVSize:]
 
 		// create cipher block
 		blockCipher, err := aes.NewCipher(key)
@@ -180,89 +158,48 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 			return nil, err
 		}
 		// specify block cipher type (CTR for stream)
-		ctr := cipher.NewCTR(blockCipher, iv)
-		// create HMAC
-		hmac := hmac.New(sha512.New, []byte(saver.SecretKey))
+		gcm, err := cipher.NewGCM(blockCipher)
+		if err != nil {
+			return nil, err
+		}
+
+		// create ZIP file
 		f, err := w.Create(file)
 		if err != nil {
 			return nil, err
 		}
 
-		buf := make([]byte, bufferSize)
-		currentOffset := int64(0)
-		dataStream.Seek(currentOffset, 0)
-
-		// first pass
-		fmt.Println("first pass")
-
+		buf := make([]byte, bufferSize+gcm.NonceSize()+gcm.Overhead())
 		for {
-			n, err := dataStream.ReadAt(buf, currentOffset)
-			if err != nil && err != io.EOF {
-				return nil, err
+			n, ioErr := dataStream.Read(buf)
+			if ioErr != nil && ioErr != io.EOF {
+				return nil, ioErr
 			}
-			cryptedData := buf[:n]
 
-			if (currentOffset+bufferSize)%offsetOfMetadata != (currentOffset + bufferSize) {
-				// only include relevant bytes
-				bytesToInclude := offsetOfMetadata - currentOffset
-				cryptedData = cryptedData[:bytesToInclude]
-			}
-			hmac.Write(cryptedData)
-			if err == io.EOF {
+			if ioErr == io.EOF {
+
 				break
 			}
-			currentOffset += bufferSize
-		}
-		hmac.Write(iv)
 
-		currentOffset = int64(0)
-		dataStream.Seek(currentOffset, 0)
-		fmt.Println(hex.EncodeToString(hmacFromFile))
-		fmt.Println(hex.EncodeToString(hmac.Sum(nil)))
+			block := buf[:n]
+			nonce := block[:gcm.NonceSize()]
+			cipherText := block[gcm.NonceSize():]
 
-		if bytes.Compare(hmacFromFile, hmac.Sum(nil)) != 0 {
-			return nil, errors.New("authentication failed")
-		}
-
-		// second pass
-		fmt.Println("second pass")
-
-		for {
-			// if we are at byte 4096 (goes to 8192) and bad byte occurs at 4112...so 4096 % 4112 != 4096
-			// include bytes 4112 - 4096
-			// on next iteration, we just wont include anything, easy, because math
-			n, err := dataStream.ReadAt(buf, currentOffset)
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
-			outBuf := make([]byte, n)
-			cryptedData := buf[:n]
-			var zipError error
-			if (currentOffset+bufferSize)%offsetOfMetadata != (currentOffset + bufferSize) {
-				// only include relevant bytes
-				bytesToInclude := offsetOfMetadata - currentOffset
-				cryptedData = cryptedData[:bytesToInclude]
-			}
-
-			ctr.XORKeyStream(outBuf, cryptedData)
-
-			_, zipError = f.Write(outBuf)
-
-			if zipError != nil {
-				return nil, err
-			}
-
-			if err == io.EOF {
-				break
-			}
+			decryptedBlock, err := gcm.Open(nil, nonce, cipherText, nil)
 
 			if err != nil {
 				return nil, err
 			}
-			currentOffset += bufferSize
-		}
 
+			_, err = f.Write(decryptedBlock)
+
+			if err != nil {
+				return nil, err
+			}
+
+		}
 	}
+
 	// close the zip writer
 	err = w.Close()
 	if err != nil {
