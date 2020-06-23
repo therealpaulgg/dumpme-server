@@ -5,6 +5,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -28,17 +30,6 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 		return err
 	}
 
-	// Create the location where the encrypted file will go
-	dest, err := os.Create(saver.StoragePath + "/" + foldername + "/" + filename)
-	if err != nil {
-		return err
-	}
-	defer dest.Close()
-
-	const bufferSize = 4096
-
-	// we now have plaintext
-
 	// create cipher block
 	blockCipher, err := aes.NewCipher(key)
 	if err != nil {
@@ -49,6 +40,30 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 	if err != nil {
 		return err
 	}
+
+	// encrypt the filename to have no information leaks
+
+	// create nonce
+	filenameNonce := make([]byte, gcm.NonceSize())
+
+	_, err = rand.Read(filenameNonce)
+	if err != nil {
+		return err
+	}
+
+	cryptedfilenameBytes := gcm.Seal(filenameNonce, filenameNonce, []byte(filename), nil)
+	cryptedfilename := base64.URLEncoding.EncodeToString(cryptedfilenameBytes)
+
+	// Create the location where the encrypted file will go
+	dest, err := os.Create(saver.StoragePath + "/" + foldername + "/" + cryptedfilename)
+	if err != nil {
+		return err
+	}
+	defer dest.Close()
+
+	const bufferSize = 4096
+
+	// we now have plaintext
 
 	buf := make([]byte, bufferSize)
 
@@ -142,19 +157,31 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 			return nil, err
 		}
 
+		// we must try to obtain original filename
+
+		cryptedfilenameBytes, err := base64.URLEncoding.DecodeString(filepath.Base(file))
+		// this would be not good
+		if err != nil {
+			return nil, err
+		}
+
+		filenameNonce, ciphertext := cryptedfilenameBytes[:gcm.NonceSize()], cryptedfilenameBytes[gcm.NonceSize():]
+		fmt.Println(len(filenameNonce))
+		fmt.Println(len(ciphertext))
+
+		filename, err := gcm.Open(nil, filenameNonce, ciphertext, nil)
+		if err != nil {
+			return nil, err
+		}
+
 		header.Method = zip.Deflate
+		header.Name = string(filename)
 
 		f, err := w.CreateHeader(header)
 
 		if err != nil {
 			return nil, err
 		}
-
-		// f, err := w.Create(file)
-
-		// if err != nil {
-		// 	return nil, err
-		// }
 
 		// the encrypted blocks are larger than the normal blocks, due to prepending of nonce and additional overhead
 		buf := make([]byte, bufferSize+gcm.NonceSize()+gcm.Overhead())
