@@ -95,7 +95,8 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 	var files []string
 	// find all files in the directory, ignoring the root and any pesky tempzip files
 	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
-		if path != directory && !strings.HasPrefix(filepath.Base(path), "tempzip") {
+		filename := filepath.Base(path)
+		if path != directory && !strings.HasPrefix(filename, "tempzip") {
 			files = append(files, path)
 		}
 		return nil
@@ -131,11 +132,29 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 			return nil, err
 		}
 
-		// create ZIP file
-		f, err := w.Create(file)
+		// add file to zip archive
+		info, err := dataStream.Stat()
 		if err != nil {
 			return nil, err
 		}
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return nil, err
+		}
+
+		header.Method = zip.Deflate
+
+		f, err := w.CreateHeader(header)
+
+		if err != nil {
+			return nil, err
+		}
+
+		// f, err := w.Create(file)
+
+		// if err != nil {
+		// 	return nil, err
+		// }
 
 		// the encrypted blocks are larger than the normal blocks, due to prepending of nonce and additional overhead
 		buf := make([]byte, bufferSize+gcm.NonceSize()+gcm.Overhead())
