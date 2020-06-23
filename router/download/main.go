@@ -26,13 +26,14 @@ func download(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 	}
 	zip, err := services.EncryptedFileSaver.GetFiles(foldername, key)
-	defer os.Remove(zip.Name())
-	zip.Seek(0, 0)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		return
 	}
+	defer os.Remove(zip.Name())
+	zip.Seek(0, 0)
+
 	w.Header().Set("Content-Disposition", "attachment; filename=decrypted.zip")
 	w.Header().Set("Content-Type", "application/zip")
 	// use a larger buffer to copy
@@ -55,7 +56,7 @@ func download(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	zip.Close()
+	// zip.Close()
 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

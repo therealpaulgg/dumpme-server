@@ -1,19 +1,21 @@
 package models
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
 
 	"github.com/klauspost/compress/zip"
 )
@@ -115,6 +117,7 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 
 	dest.Write(iv)
 	hmac.Write(iv)
+
 	dest.Write(hmac.Sum(nil))
 	return nil
 }
@@ -129,7 +132,7 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 	var files []string
 	// find all files in the directory, ignoring the root
 	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
-		if path != directory {
+		if path != directory && !strings.HasPrefix(filepath.Base(path), "tempzip") {
 			files = append(files, path)
 		}
 		return nil
@@ -151,8 +154,8 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 
 	for _, file := range files {
 		// obtain ciphertext and add the decrypted version to an archive
-		start := time.Now()
-		fmt.Println("Reading file..", time.Since(start))
+		// start := time.Now()
+
 		dataStream, err := os.Open(file)
 
 		// seek the last 16 + 64 bytes (IV length & hmac length) which contain the IV as well as HMAC
@@ -167,16 +170,9 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 		if err != nil {
 			return nil, err
 		}
-		// fmt.Println(ivAndHMAC)
+
 		iv := ivAndHMAC[:IVSize]
 		hmacFromFile := ivAndHMAC[IVSize:]
-		fmt.Println(hex.EncodeToString(iv))
-		fmt.Println(hex.EncodeToString(hmacFromFile))
-
-		// data, err := ioutil.ReadFile(file)
-		// if err != nil {
-		// 	return nil, err
-		// }
 
 		// create cipher block
 		blockCipher, err := aes.NewCipher(key)
@@ -187,7 +183,6 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 		ctr := cipher.NewCTR(blockCipher, iv)
 		// create HMAC
 		hmac := hmac.New(sha512.New, []byte(saver.SecretKey))
-		fmt.Println("Adding file to zip...", time.Since(start))
 		f, err := w.Create(file)
 		if err != nil {
 			return nil, err
@@ -196,6 +191,41 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 		buf := make([]byte, bufferSize)
 		currentOffset := int64(0)
 		dataStream.Seek(currentOffset, 0)
+
+		// first pass
+		fmt.Println("first pass")
+
+		for {
+			n, err := dataStream.ReadAt(buf, currentOffset)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			cryptedData := buf[:n]
+
+			if (currentOffset+bufferSize)%offsetOfMetadata != (currentOffset + bufferSize) {
+				// only include relevant bytes
+				bytesToInclude := offsetOfMetadata - currentOffset
+				cryptedData = cryptedData[:bytesToInclude]
+			}
+			hmac.Write(cryptedData)
+			if err == io.EOF {
+				break
+			}
+			currentOffset += bufferSize
+		}
+		hmac.Write(iv)
+
+		currentOffset = int64(0)
+		dataStream.Seek(currentOffset, 0)
+		fmt.Println(hex.EncodeToString(hmacFromFile))
+		fmt.Println(hex.EncodeToString(hmac.Sum(nil)))
+
+		if bytes.Compare(hmacFromFile, hmac.Sum(nil)) != 0 {
+			return nil, errors.New("authentication failed")
+		}
+
+		// second pass
+		fmt.Println("second pass")
 
 		for {
 			// if we are at byte 4096 (goes to 8192) and bad byte occurs at 4112...so 4096 % 4112 != 4096
@@ -206,17 +236,17 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 				return nil, err
 			}
 			outBuf := make([]byte, n)
-			ctr.XORKeyStream(outBuf, buf[:n])
-			hmac.Write(outBuf)
+			cryptedData := buf[:n]
 			var zipError error
 			if (currentOffset+bufferSize)%offsetOfMetadata != (currentOffset + bufferSize) {
 				// only include relevant bytes
 				bytesToInclude := offsetOfMetadata - currentOffset
-				_, zipError = f.Write(outBuf[:bytesToInclude])
-			} else {
-				// normal stuff
-				_, zipError = f.Write(outBuf)
+				cryptedData = cryptedData[:bytesToInclude]
 			}
+
+			ctr.XORKeyStream(outBuf, cryptedData)
+
+			_, zipError = f.Write(outBuf)
 
 			if zipError != nil {
 				return nil, err
@@ -231,7 +261,6 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.
 			}
 			currentOffset += bufferSize
 		}
-		fmt.Println("Added to zip", time.Since(start))
 
 	}
 	// close the zip writer
