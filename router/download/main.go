@@ -38,19 +38,19 @@ func download(w http.ResponseWriter, req *http.Request) {
 	// use a larger buffer to copy
 	for {
 		buf := make([]byte, 4096)
-		_, err := zip.Read(buf)
-		if err != nil && err != io.EOF {
+		_, readErr := zip.Read(buf)
+		if readErr != nil && readErr != io.EOF {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		_, err = w.Write(buf)
-		if err != nil && err != io.EOF {
+		_, err := w.Write(buf)
+		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		if err == io.EOF {
+		if readErr == io.EOF {
 			break
 		}
 	}
