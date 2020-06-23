@@ -25,7 +25,10 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 	// Check if directory exists, create if it doesn't exist yet
 	_, err := os.Stat(saver.StoragePath + "/" + foldername)
 	if os.IsNotExist(err) {
-		os.Mkdir(saver.StoragePath+"/"+foldername, 0755)
+		err = os.Mkdir(saver.StoragePath+"/"+foldername, 0755)
+		if err != nil {
+			return err
+		}
 	} else if err != nil {
 		return err
 	}
