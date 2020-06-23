@@ -21,12 +21,6 @@ type Router struct {
 // Launch the application by gathering all routes together
 func (info *Router) Launch() {
 	r := chi.NewRouter()
-	// r.Use(middleware.AllowContentType(
-	// 	"application/json",
-	// 	"image/jpeg",
-	// 	"image/png",
-	// 	"image/bmp",
-	// 	"image/gif"))
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 	r.Use(middleware.Logger)
 	r.Use(middleware.StripSlashes)

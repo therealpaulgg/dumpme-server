@@ -9,9 +9,11 @@ import (
 	"github.com/therealpaulgg/dumpme-server/models"
 	"github.com/therealpaulgg/dumpme-server/router"
 	"github.com/therealpaulgg/dumpme-server/services"
+	"github.com/therealpaulgg/dumpme-server/services/filesystem"
 )
 
 func main() {
+	// Attempt to read JSON file.
 	file, err := ioutil.ReadFile("config.json")
 	if err != nil {
 		panic("Could not open config file (config.json).")
@@ -21,14 +23,17 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
+	// There are two modes for storage:
+	// 1. Filesystem
+	// 2. Buckets (like Amazon S3 and DigitalOcean Spaces) (not implemented yet)
 	if config.StorageType == "filesystem" {
-		var saver *models.LocalStorageSaverAES
+		var saver *filesystem.LocalStorageSaverAES
 		if config.StoragePath != "" {
 			_, err := os.Stat(config.StoragePath)
 			if err != nil {
 				panic(err.Error())
 			}
-			saver = &models.LocalStorageSaverAES{StoragePath: strings.TrimRight(strings.TrimRight(config.StoragePath, "/"), "\\")}
+			saver = &filesystem.LocalStorageSaverAES{StoragePath: strings.TrimRight(strings.TrimRight(config.StoragePath, "/"), "\\")}
 		} else {
 			if _, err := os.Stat("dump"); os.IsNotExist(err) {
 				err = os.Mkdir("dump", 0755)
@@ -36,7 +41,7 @@ func main() {
 					panic(err.Error())
 				}
 			}
-			saver = &models.LocalStorageSaverAES{StoragePath: "dump"}
+			saver = &filesystem.LocalStorageSaverAES{StoragePath: "dump"}
 		}
 		saver.SecretKey = config.SecretKey
 		services.EncryptedFileSaver = saver
@@ -50,12 +55,14 @@ func main() {
 	} else {
 		port = 8080
 	}
+	// currently does nothing
 	var environment string
 	if config.Environment != "" {
 		environment = config.Environment
 	} else {
 		environment = "production"
 	}
+	// launch HTTP server
 	r := router.Router{Port: port, Env: environment}
 	r.Launch()
 }

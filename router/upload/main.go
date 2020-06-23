@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi"
 	gonanoid "github.com/matoous/go-nanoid"
@@ -21,16 +20,16 @@ func Router() chi.Router {
 }
 
 func uploadFiles(w http.ResponseWriter, req *http.Request) {
-	start := time.Now()
+	// When creating a file, use 10 << 20 (10 megabytes) in memory, otherwise, create temporary files
 	err := req.ParseMultipartForm(10 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 		return
 	}
-	fmt.Println("Just finished parsing multipart", time.Since(start))
 	m := req.MultipartForm
 	files := m.File["files"]
+	// create a random nanoid for the foldername
 	foldername, _ := gonanoid.Nanoid(54)
 	// 256 bit AES is 32 bytes
 	key := make([]byte, 32)
@@ -39,7 +38,7 @@ func uploadFiles(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 	}
-	// key, _ := gonanoid.Nanoid(32)
+	// try to write all files to the system. this should not fail.
 	for i := range files {
 		file, err := files[i].Open()
 		defer file.Close()
@@ -54,12 +53,15 @@ func uploadFiles(w http.ResponseWriter, req *http.Request) {
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 			return
 		}
-		fmt.Println("Added & encrypted file", time.Since(start))
 	}
+	// base64 encode the AES key, and include in the URL. without this, no way to recover the uploaded data.
+	// USING THIS PROGRAM OVER HTTP IS INHERENTLY INSECURE AS THE BASE64 URL ENCODED KEY WILL BE VISIBLE IN PLAINTEXT.
 	encodedKey := base64.URLEncoding.EncodeToString(key)
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"folderName": foldername,
 		"key":        encodedKey,
-		"url":        "http://localhost:8080/download/" + foldername + "/" + encodedKey,
+		// generate a convenient URL
+		"url": fmt.Sprintf("%s://%s/download/%s/%s", req.Proto, req.Host, foldername, encodedKey),
 	})
 }
