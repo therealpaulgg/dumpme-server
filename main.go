@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alecthomas/units"
 	"github.com/therealpaulgg/dumpme-server/models"
 	"github.com/therealpaulgg/dumpme-server/router"
 	"github.com/therealpaulgg/dumpme-server/services"
@@ -19,6 +20,7 @@ func main() {
 		panic("Could not open config file (config.json).")
 	}
 	var config models.Configuration
+	services.Configuration = models.AppConfiguration{}
 	err = json.Unmarshal(file, &config)
 	if err != nil {
 		panic(err.Error())
@@ -28,6 +30,7 @@ func main() {
 	// 2. Buckets (like Amazon S3 and DigitalOcean Spaces) (not implemented yet)
 	if config.StorageType == "filesystem" {
 		var saver *filesystem.LocalStorageSaverAES
+
 		if config.StoragePath != "" {
 			_, err := os.Stat(config.StoragePath)
 			if err != nil {
@@ -44,6 +47,18 @@ func main() {
 			saver = &filesystem.LocalStorageSaverAES{StoragePath: "dump"}
 		}
 		services.EncryptedFileSaver = saver
+		if config.FileLimit == "-1" {
+			services.Configuration.FileLimit = -1
+		} else if config.FileLimit != "" {
+			limit, err := units.ParseStrictBytes(config.FileLimit)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			services.Configuration.FileLimit = limit
+		} else {
+			services.Configuration.FileLimit = 500000000
+		}
 	}
 	var port int
 	if config.Port != 0 {

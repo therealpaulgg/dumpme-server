@@ -6,3 +6,4 @@ import "github.com/therealpaulgg/dumpme-server/models"
 
 // EncryptedFileSaver Stores files on the filesystem in an encrypted format.
 var EncryptedFileSaver models.EncryptedFileSaver
+var Configuration models.AppConfiguration

@@ -21,6 +21,7 @@ func Router() chi.Router {
 }
 
 func uploadFiles(w http.ResponseWriter, req *http.Request) {
+	req.Body = http.MaxBytesReader(w, req.Body, services.Configuration.FileLimit)
 	// When creating a file, use 10 << 20 (10 megabytes) in memory, otherwise, create temporary files
 	err := req.ParseMultipartForm(10 << 20)
 	if err != nil {
