@@ -16,8 +16,8 @@ steps:
             port: 22
             key:
                 from_secret: SSH_KEY
-            source: dist
-            target: ~/apps/dumpme-server
+            source: app
+            target: ~/apps/dumpme-server/
             username:
                 from_secret: USER
             when:
