@@ -14,8 +14,9 @@ import (
 
 // Router represents what is launched at the beginning of the application
 type Router struct {
-	Port int
-	Env  string
+	Port  int
+	Env   string
+	Proto string
 }
 
 // Launch the application by gathering all routes together
@@ -42,6 +43,7 @@ func (info *Router) Launch() {
 
 	// TODO: Add NotFound and MethodNotAllowed and other necessary errors as custom responses
 	fmt.Printf("Listening on port %d\n", info.Port)
+	fmt.Println("Running in mode: " + info.Proto)
 	fmt.Printf("Environment: %s\n", info.Env)
 	err := http.ListenAndServe(fmt.Sprintf(":%d", info.Port), r)
 	log.Fatal(err)

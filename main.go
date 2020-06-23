@@ -84,6 +84,6 @@ func main() {
 		environment = "production"
 	}
 	// launch HTTP server
-	r := router.Router{Port: port, Env: environment}
+	r := router.Router{Port: port, Env: environment, Proto: services.Configuration.Proto}
 	r.Launch()
 }
