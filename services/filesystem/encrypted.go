@@ -16,7 +16,6 @@ import (
 // LocalStorageSaverAES implements FileSaver, uses local system storage. Makes use of AES.
 type LocalStorageSaverAES struct {
 	StoragePath string
-	SecretKey   string
 }
 
 // SaveFile LocalStorageSaver's implmementation of SaveFile

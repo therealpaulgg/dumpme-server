@@ -6,5 +6,4 @@ type Configuration struct {
 	StoragePath string `json:"storagePath"`
 	Port        int    `json:"port"`
 	Environment string `json:"environment"`
-	SecretKey   string `json:"secretKey"`
 }
