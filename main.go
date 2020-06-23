@@ -54,10 +54,17 @@ func main() {
 			if err != nil {
 				panic(err.Error())
 			}
-
 			services.Configuration.FileLimit = limit
 		} else {
 			services.Configuration.FileLimit = 500000000
+		}
+		proto := strings.ToLower(config.Proto)
+		if proto == "" {
+			services.Configuration.Proto = "http"
+		} else if proto == "http" || proto == "https" {
+			services.Configuration.Proto = proto
+		} else {
+			panic("Protocol must be http or https")
 		}
 	}
 	var port int

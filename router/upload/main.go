@@ -76,6 +76,6 @@ func uploadFiles(w http.ResponseWriter, req *http.Request) {
 		"folderName": foldername,
 		"key":        encodedKey,
 		// generate a convenient URL
-		"url": fmt.Sprintf("%s://%s/download/%s/%s", "http", req.Host, foldername, encodedKey),
+		"url": fmt.Sprintf("%s://%s/download/%s/%s", services.Configuration.Proto, req.Host, foldername, encodedKey),
 	})
 }

@@ -7,9 +7,11 @@ type Configuration struct {
 	Port        int    `json:"port"`
 	Environment string `json:"environment"`
 	FileLimit   string `json:"fileLimit"`
+	Proto       string `json:"proto"`
 }
 
 // AppConfiguration is the configuration that the application uses during runtime.
 type AppConfiguration struct {
 	FileLimit int64
+	Proto     string
 }
