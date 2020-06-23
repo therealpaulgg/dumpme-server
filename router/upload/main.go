@@ -22,7 +22,7 @@ func Router() chi.Router {
 
 func uploadFiles(w http.ResponseWriter, req *http.Request) {
 	start := time.Now()
-	err := req.ParseMultipartForm(10 << 28)
+	err := req.ParseMultipartForm(10 << 20)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})

@@ -3,7 +3,9 @@ package download
 import (
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi"
 	"github.com/therealpaulgg/dumpme-server/services"
@@ -24,6 +26,7 @@ func download(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
 	}
 	zip, err := services.EncryptedFileSaver.GetFiles(foldername, key)
+	zip.Seek(0, 0)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
@@ -31,5 +34,12 @@ func download(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=decrypted.zip")
 	w.Header().Set("Content-Type", "application/zip")
-	w.Write(zip.Bytes())
+	_, err = io.Copy(w, zip)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	os.Remove(zip.Name())
 }

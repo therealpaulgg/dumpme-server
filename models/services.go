@@ -1,7 +1,6 @@
 package models
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -10,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -26,7 +26,7 @@ type FileSaver interface {
 // EncryptedFileSaver is a generic interface which saves a file to the persistent storage set up in user configuration.
 type EncryptedFileSaver interface {
 	SaveFile(filename string, foldername string, key []byte, file multipart.File) error
-	GetFiles(foldername string, key []byte) (*bytes.Buffer, error)
+	GetFiles(foldername string, key []byte) (*os.File, error)
 }
 
 // LocalStorageSaver implements FileSaver, uses local system storage.
@@ -120,14 +120,11 @@ func (saver *LocalStorageSaverAES) SaveFile(filename string, foldername string, 
 }
 
 // GetFiles decrypts all files in directory and zips them up
-func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*bytes.Buffer, error) {
+func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*os.File, error) {
 	directory := saver.StoragePath + "/" + foldername
 	if _, err := os.Stat(directory); err != nil {
 		return nil, err
 	}
-	// create a buffer for a zip file in memory
-	zipbuf := new(bytes.Buffer)
-	w := zip.NewWriter(zipbuf)
 
 	var files []string
 	// find all files in the directory, ignoring the root
@@ -140,6 +137,14 @@ func (saver *LocalStorageSaverAES) GetFiles(foldername string, key []byte) (*byt
 	if err != nil {
 		return nil, err
 	}
+
+	// create a buffer for a zip file in memory' (after current directories have been parsed)
+	zipbuf, err := ioutil.TempFile(directory, "tempzip-")
+	zipbuf.Name()
+	if err != nil {
+		return nil, err
+	}
+	w := zip.NewWriter(zipbuf)
 
 	const IVSize = 16
 	const bufferSize = 4096
