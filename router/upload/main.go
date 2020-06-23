@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/go-chi/chi"
@@ -28,7 +29,19 @@ func uploadFiles(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	m := req.MultipartForm
-	files := m.File["files"]
+	fmt.Println(m.File)
+	files := []*multipart.FileHeader{}
+	for _, filelist := range m.File {
+		for _, file := range filelist {
+			files = append(files, file)
+		}
+	}
+	// files := m.File["files"]
+	if len(files) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "Uh upload a file broh."})
+		return
+	}
 	// create a random nanoid for the foldername
 	foldername, _ := gonanoid.Nanoid(54)
 	// 256 bit AES is 32 bytes
